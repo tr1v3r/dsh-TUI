@@ -79,8 +79,8 @@ export const TIPS: readonly Tip[] = [
   {
     id: 'keys-vim',
     group: 'keys',
-    zh: '/vim 开启输入框 vim 编辑：Esc 切 normal，i/a/o 回 insert',
-    en: '/vim enables vim editing: Esc to normal, i/a/o back to insert',
+    zh: '/vim 开启输入框 vim 编辑：Esc 切 normal，insert 键回 insert；NORMAL 键位可在 /settings → Vim keys 自定义',
+    en: '/vim enables vim editing: Esc to normal, an insert key back to insert; NORMAL keys are customizable in /settings → Vim keys',
   },
   {
     id: 'keys-ctrl-enter',

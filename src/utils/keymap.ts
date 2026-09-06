@@ -367,3 +367,123 @@ export function reservedActionCombos(): ReadonlySet<string> {
   }
   return reserved
 }
+
+// --- vim normal-mode keys ----------------------------------------------------
+// `/vim`'s NORMAL submode binds bare characters, not ctrl/alt combos, so it
+// gets its own action registry beside SHORTCUT_ACTIONS: same shape (id +
+// defaults), same live-override cache fed by plugin.ts from the settings
+// user layer over cordis.yml. PromptInput translates a pressed key to the
+// canonical built-in key before its dispatch, so one remap covers motions,
+// edits, the `d` operator's second key, and the insert entries alike.
+
+/** Identifiers of every customizable `/vim` normal-mode action. */
+export type VimActionId =
+  | 'left'
+  | 'down'
+  | 'up'
+  | 'right'
+  | 'lineStart'
+  | 'firstNonBlank'
+  | 'lineEnd'
+  | 'wordForward'
+  | 'wordBackward'
+  | 'wordEnd'
+  | 'deleteChar'
+  | 'deleteBefore'
+  | 'deleteOperator'
+  | 'undo'
+  | 'insert'
+  | 'insertFirstNonBlank'
+  | 'insertAfter'
+  | 'insertEndOfLine'
+  | 'openBelow'
+  | 'openAbove'
+
+export interface VimActionSpec {
+  readonly id: VimActionId
+  /** Default key; the FIRST entry is the canonical key the dispatch knows. */
+  readonly defaults: readonly [string]
+}
+
+/** The registry. Defaults are today's hard-wired NORMAL keys; `wordEnd` was
+ *  previously unbound (an ignored key) and gains vim's `e` so every action
+ *  has a canonical key for overrides to translate back to. */
+export const VIM_ACTIONS: readonly VimActionSpec[] = [
+  { id: 'left', defaults: ['h'] },
+  { id: 'down', defaults: ['j'] },
+  { id: 'up', defaults: ['k'] },
+  { id: 'right', defaults: ['l'] },
+  { id: 'lineStart', defaults: ['0'] },
+  { id: 'firstNonBlank', defaults: ['^'] },
+  { id: 'lineEnd', defaults: ['$'] },
+  { id: 'wordForward', defaults: ['w'] },
+  { id: 'wordBackward', defaults: ['b'] },
+  { id: 'wordEnd', defaults: ['e'] },
+  { id: 'deleteChar', defaults: ['x'] },
+  { id: 'deleteBefore', defaults: ['X'] },
+  { id: 'deleteOperator', defaults: ['d'] },
+  { id: 'undo', defaults: ['u'] },
+  { id: 'insert', defaults: ['i'] },
+  { id: 'insertFirstNonBlank', defaults: ['I'] },
+  { id: 'insertAfter', defaults: ['a'] },
+  { id: 'insertEndOfLine', defaults: ['A'] },
+  { id: 'openBelow', defaults: ['o'] },
+  { id: 'openAbove', defaults: ['O'] },
+]
+
+/** Canonical built-in key of each action — overrides point an action at a
+ *  NEW pressed key, so the translation below maps that key back to this one. */
+const CANONICAL_VIM_KEY: ReadonlyMap<VimActionId, string> = new Map(
+  VIM_ACTIONS.map(action => [action.id, action.defaults[0]]),
+)
+
+/** Live vim overrides in both directions: pressed key → action (the
+ *  translation PromptInput consults) and action → pressed key (the
+ *  effective-key display /settings shows). Settings user layer + cordis.yml
+ *  merged by plugin.ts. When two actions claim the same key, the LATER
+ *  action in VIM_ACTIONS order wins — keep the full layout consistent. */
+let vimOverrideByKey: ReadonlyMap<string, VimActionId> = new Map()
+let vimOverrideByAction: ReadonlyMap<VimActionId, string> = new Map()
+
+/**
+ * Replace the whole vim override map. Values must be single printable
+ * characters (case-sensitive); anything else is DROPPED and the action keeps
+ * its default — the same typo rule as setKeymapOverrides. `/` and `?` are
+ * refused: they own the command-menu / help shortcuts before the vim
+ * dispatch ever sees them.
+ */
+export function setVimKeys(overrides: Partial<Record<VimActionId, string | readonly string[] | undefined>>): void {
+  const byKey = new Map<string, VimActionId>()
+  const byAction = new Map<VimActionId, string>()
+  for (const action of VIM_ACTIONS) {
+    const raw = overrides[action.id]
+    if (raw === undefined) continue
+    for (const entry of (Array.isArray(raw) ? raw : [raw])) {
+      const key = String(entry)
+      if (key.length !== 1 || key === '/' || key === '?') continue
+      byKey.set(key, action.id)
+      if (!byAction.has(action.id)) byAction.set(action.id, key)
+    }
+  }
+  vimOverrideByKey = byKey
+  vimOverrideByAction = byAction
+}
+
+/** Test seam: drop every vim override. */
+export function resetVimKeys(): void {
+  vimOverrideByKey = new Map()
+  vimOverrideByAction = new Map()
+}
+
+/** The canonical built-in key a pressed vim key acts as; identity for
+ *  unmapped keys (an untouched layout needs no translation). */
+export function vimCanonicalKey(key: string): string {
+  const action = vimOverrideByKey.get(key)
+  return action === undefined ? key : (CANONICAL_VIM_KEY.get(action) ?? key)
+}
+
+/** Effective key of one vim action as a display string (override, else the
+ *  default) — the `/settings` vim fields show it when unset. */
+export function effectiveVimKey(action: VimActionId): string {
+  return vimOverrideByAction.get(action) ?? (CANONICAL_VIM_KEY.get(action) ?? '')
+}

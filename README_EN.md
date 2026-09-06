@@ -116,7 +116,7 @@ the interface, and removing it leaves no core modifications behind.
   in-row star or `Ctrl+P` toggles, pins persist in `~/.dsh-tui`), alongside
   `/new`, `/workspace`, `/compact`, `/export`,
   the `/btw` side question, model switching, double-`Esc` rewind through a
-  session fork, vim editing for the prompt (`/vim`), mouse selection
+  session fork, vim editing for the prompt (`/vim`, NORMAL keys remappable in /settings → Vim keys or settings.yaml `dsh-tui.vimKeys` for Colemak-style layouts), mouse selection
   editing in the prompt (drag to select, Shift+click to extend,
   double-click word select, `Ctrl+C` to copy the selection), and a
   fullscreen draft editor (`Ctrl+Shift+E` or the `⛶` row button: line
@@ -262,7 +262,7 @@ For migration from the former `dsh-cc-tui` package and `cc-tui` profile, see
 | `/` | In-session full-text search (`n`/`N` to jump) |
 | `Ctrl+V` / `Alt+V` | Paste text or files from the file manager; images show as `[Image #N]` and are sent as durable attachments. Use `Alt+V` when the terminal intercepts `Ctrl+V` |
 | `Ctrl+G` | Edit the current input with `$VISUAL`/`$EDITOR` (e.g. nvim); content is filled back in on save and exit |
-| `/vim` | Toggle vim editing for the prompt (session-scoped): `Esc` switches to NORMAL (`h/l/j/k`, `0/^/$`, `w/b`, `x/X`, `dd`/`d$`/`d0`/`dw`, `u` undo), `i/a/o` back to INSERT |
+| `/vim` | Toggle vim editing for the prompt (session-scoped): `Esc` switches to NORMAL (`h/l/j/k`, `0/^/$`, `w/b/e`, `x/X`, `dd`/`d$`/`d0`/`dw`, `u` undo), `i/a/o` back to INSERT — NORMAL keys are remappable in /settings → Vim keys |
 | `?` | Keybinding menu (responds only when the input is empty) |
 | `Shift+↑` | Message selection mode (`Enter` expands a single message) |
 | `Ctrl+P` | Toggle the startup loaded-context panel while it is on screen; inside `/resume`, pin/unpin the selected session |

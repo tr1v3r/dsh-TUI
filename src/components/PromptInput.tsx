@@ -36,7 +36,7 @@ import { appendHistory } from '../history.js'
 import { mentionAtCaret } from '../utils/mentions.js'
 import { preserveSelection, type FileCandidate } from '../utils/fileSuggestions.js'
 import { isMod } from '../utils/modifiers.js'
-import { actionMatches } from '../utils/keymap.js'
+import { actionMatches, vimCanonicalKey } from '../utils/keymap.js'
 import { CommandSuggestions } from './CommandSuggestions.js'
 import { FileSuggestions } from './FileSuggestions.js'
 import { HelpMenu } from './HelpMenu.js'
@@ -252,6 +252,20 @@ function vimWordBackward(text: string, cursor: number): number {
 function vimWordEnd(text: string, cursor: number): number {
   const len = text.length
   let i = cursor
+  while (i < len && !/\s/.test(text[i]!)) i++
+  return i
+}
+
+/** End of the current OR NEXT word (`e` motion): from mid-word, this word's
+ *  end; from a word end or whitespace, skip ahead and take the next word's
+ *  end — repeated presses walk the word ends (unlike vimWordEnd, which
+ *  stalls on the whitespace a previous press landed on). */
+function vimWordEndForward(text: string, cursor: number): number {
+  const len = text.length
+  let i = cursor
+  if (i < len && /\s/.test(text[i]!)) {
+    while (i < len && /\s/.test(text[i]!)) i++
+  }
   while (i < len && !/\s/.test(text[i]!)) i++
   return i
 }
@@ -2319,6 +2333,10 @@ export function PromptInput({
       const bounds = graphemeBoundaries(value)
       const pending = vimPendingRef.current
       vimPendingRef.current = ''
+      // Vim key overrides (settings `dsh-tui.vimKeys`) translate before both
+      // dispatches so the `d` operator's second key follows the same layout
+      // as the motion it names.
+      input = vimCanonicalKey(input)
       // Operator pending (`d`): the second key picks the target.
       if (pending === 'd') {
         switch (input) {
@@ -2392,6 +2410,9 @@ export function PromptInput({
           return
         case 'b':
           setInput(value, vimWordBackward(value, cursor))
+          return
+        case 'e': // forward to end of word (vim `e`)
+          setInput(value, vimWordEndForward(value, cursor))
           return
         case 'x': { // delete the character at the caret; at the very end of
           // the text delete the last character (vim: the caret sits ON the

@@ -80,7 +80,7 @@ prompt shows an `INSERT` badge and typing works as usual; `Esc` switches to the
 | `h` / `l` | Move left / right one character |
 | `j` / `k` | Move down / up one line (multi-line input) |
 | `0` / `^` / `$` | Line start / first non-blank / line end |
-| `w` / `b` | Next / previous word start (whitespace-split) |
+| `w` / `b` / `e` | Next / previous word start / current-or-next word end (whitespace-split; `e` repeats word end by word end) |
 | `x` / `X` | Delete the character at / before the caret (`x` deletes the last char at line end) |
 | `d` + second key | `dd` delete whole line (newline included) · `d$` delete to line end · `d0`/`d^` delete to line start · `dw` delete to word end |
 | `u` | Undo the last vim edit (stack capped at 100) |
@@ -95,6 +95,16 @@ While vim mode is on, `Esc` belongs to vim — use `/rewind` or exit vim mode
 then double-Esc for time rewind; during a running turn, `Esc` in INSERT just
 returns to NORMAL (interrupt with `Ctrl+C` / `Ctrl+Enter`). Clear the draft in
 NORMAL with `Ctrl+C` or `dd`.
+
+NORMAL keys are remappable: `/settings` → `dsh-tui` → `Vim keys` edits one key
+per action (single character, case-sensitive; blank restores the default, saves
+apply live), settings.yaml accepts `dsh-tui.vimKeys.<action>`, and cordis.yml
+pins `vimKeys.<action>` statically (the `/settings` user layer wins). A remap
+covers motions, edits, the `d` operator's second key, and the insert entries
+alike; `/` and `?` cannot be claimed (they own the command menu and help).
+When two actions claim the same key the later one in the registry wins — remap
+the layout as a whole (e.g. Colemak: `n/e/u/i` to move, `h` word-end, `l` undo,
+`k`/`K` insert, `N`/`I` line edges).
 
 Bracketed paste from right-click or the terminal's native paste command keeps
 ordinary text and newlines and is never mistaken for an Enter key. To keep

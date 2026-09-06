@@ -31,17 +31,22 @@ const { Terminal: XTerm } = xtermHeadless
 import { render } from '../lib/types/ui.js'
 import { Chat } from '../lib/types/screens/Chat.js'
 import { setLang } from '../lib/types/i18n.js'
+import { LOCAL_COMMANDS } from '../lib/types/commands.js'
 import {
   actionMatches,
   draftComboConflicts,
   effectiveComboString,
   effectiveCombos,
+  effectiveVimKey,
   isFixedReserved,
   parseCombo,
   parseComboDraft,
   reservedActionCombos,
   resetKeymapOverrides,
+  resetVimKeys,
   setKeymapOverrides,
+  setVimKeys,
+  vimCanonicalKey,
 } from '../lib/types/utils/keymap.js'
 import { settle, settled, sleep, viewportLines } from './lib/term-test.mjs'
 
@@ -119,6 +124,39 @@ check('conflict: dashboard claiming ctrl+e (showAll owns it)', draftComboConflic
 check('conflict: another action cannot borrow the fixed ctrl+u', draftComboConflicts('dashboard', ['ctrl+u']))
 resetKeymapOverrides()
 
+// ---- vim normal-mode keys --------------------------------------------------
+
+// Identity: an untouched layout needs no translation.
+resetVimKeys()
+check('vim: identity for unmapped keys', vimCanonicalKey('h') === 'h' && vimCanonicalKey('x') === 'x')
+check('vim: defaults report themselves', effectiveVimKey('left') === 'h' && effectiveVimKey('wordEnd') === 'e')
+
+// A Colemak-style layout translates every pressed key onto the built-in
+// semantics, and the displaced built-in keys are all covered by the layout.
+setVimKeys({ left: 'n', down: 'e', up: 'u', right: 'i', wordEnd: 'h', undo: 'l', insert: 'k', insertFirstNonBlank: 'K', lineStart: 'N', lineEnd: 'I' })
+check('vim: colemak n->h (left)', vimCanonicalKey('n') === 'h')
+check('vim: colemak e->j (down)', vimCanonicalKey('e') === 'j')
+check('vim: colemak u->k (up)', vimCanonicalKey('u') === 'k')
+check('vim: colemak i->l (right)', vimCanonicalKey('i') === 'l')
+check('vim: colemak h->e (wordEnd)', vimCanonicalKey('h') === 'e')
+check('vim: colemak l->u (undo)', vimCanonicalKey('l') === 'u')
+check('vim: colemak k->i (insert)', vimCanonicalKey('k') === 'i')
+check('vim: colemak K->I (insert at first non-blank)', vimCanonicalKey('K') === 'I')
+check('vim: colemak N->0 (lineStart)', vimCanonicalKey('N') === '0')
+check('vim: colemak I->$ (lineEnd)', vimCanonicalKey('I') === '$')
+check('vim: colemak j keeps its built-in meaning', vimCanonicalKey('j') === 'j')
+check('vim: colemak overrides report their keys', effectiveVimKey('left') === 'n' && effectiveVimKey('wordEnd') === 'h')
+
+// Junk is dropped and the action keeps its default (same typo rule as the
+// combo overrides); `/` and `?` are refused — they own the command menu and
+// help shortcuts before the vim dispatch ever sees them.
+resetVimKeys()
+setVimKeys({ left: 'dd', down: '', wordEnd: '/', up: 'uu', insert: '?' })
+check('vim: junk entries dropped to defaults', vimCanonicalKey('h') === 'h' && effectiveVimKey('left') === 'h')
+check('vim: / refused', vimCanonicalKey('/') === '/')
+check('vim: ? refused', vimCanonicalKey('?') === '?')
+resetVimKeys()
+
 // ---- live Chat: Alt+V triggers the paste branch ---------------------------
 // The host clipboard is whatever it happens to be, so the deterministic
 // proof is indirect but airtight: with meta held, the typing branch can
@@ -182,7 +220,7 @@ const channel = {
   mode: { id: 'default', plan: false, sandbox: 'workspace-write', approval: 'ask' },
   modeIndex: 0,
   cycleMode() {},
-  commandList: [],
+  commandList: LOCAL_COMMANDS,
   commandCompletions: () => [],
   contextSegments: { system: 0, prompt: 0, assistant: 0, thinking: 0, tools: 0 },
   notify(text, options) { notifications.push({ text: String(text), options }) },
@@ -290,6 +328,43 @@ check('remapped alt+g editor key does not type g', promptText() !== 'g', JSON.st
 check('remapped editor key reached the editor path (notify seen)', editorNotice, JSON.stringify(notifications.map(n => n.text)))
 check('default ctrl+g no longer matches after remap', !actionMatches('editor', 'g', { ctrl: true }))
 resetKeymapOverrides()
+
+// ---- live Chat: vim NORMAL keys and their remaps ----------------------------
+// Enter vim mode through the real command path, then walk word ends with the
+// new `e` motion (twice — the second press must not stall on the whitespace
+// the first one landed on) and delete with `x`, asserting the visible draft.
+// Vim mode prefixes the prompt row with an INSERT/NORMAL badge; strip it
+// before comparing draft text, and gate on the badge (not an empty prompt)
+// so the command menu has really closed before typing starts.
+const vimPromptText = () => promptText().replace(/^(INSERT|NORMAL)\s*/, '')
+stdin.write('/vim\r')
+await settled(() => /INSERT|NORMAL/.test(screen()))
+await sleep(250)
+stdin.write('ab cd')
+check('vim live: typing works in INSERT', await settled(() => vimPromptText() === 'ab cd'), JSON.stringify(vimPromptText()))
+stdin.write('\x1b') // Esc → NORMAL
+await settled(() => /NORMAL/.test(screen()))
+stdin.write('0') // caret to line start
+await sleep(100)
+stdin.write('ee') // word-end walk: end of "ab", then end of "cd"
+await sleep(100)
+stdin.write('x') // at end of text: deletes the last char
+check('vim live: e-motion walks word ends, x deletes', await settled(() => vimPromptText() === 'ab c'), JSON.stringify(vimPromptText()))
+
+// Remap a Colemak subset live: N = line start, h = word end. The same walk
+// must work through the remapped keys — and the bare keys never type text.
+setVimKeys({ lineStart: 'N', wordEnd: 'h' })
+stdin.write('i') // back to INSERT
+await settled(() => /INSERT/.test(screen()))
+stdin.write('\x03') // Ctrl+C clears the draft (INSERT)
+await settled(() => vimPromptText() === '')
+stdin.write('ab cd')
+await settled(() => vimPromptText() === 'ab cd')
+stdin.write('\x1b') // Esc → NORMAL
+await settled(() => /NORMAL/.test(screen()))
+stdin.write('Nhhx')
+check('vim live: remapped keys drive the same motions', await settled(() => vimPromptText() === 'ab c'), JSON.stringify(vimPromptText()))
+resetVimKeys()
 
 instance.unmount()
 console.log(failed === 0 ? '\nall keymap checks passed' : `\n${failed} keymap check(s) failed`)

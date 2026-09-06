@@ -40,10 +40,14 @@ import { DEFAULT_PAGE_MARGIN, DEFAULT_STATUS_BAR, applyPageMargin, isPageMarginM
 import {
   draftComboConflicts,
   effectiveComboString,
+  effectiveVimKey,
   parseComboDraft,
   setKeymapOverrides,
+  setVimKeys,
   SHORTCUT_ACTIONS,
   type ShortcutActionId,
+  VIM_ACTIONS,
+  type VimActionId,
 } from '../utils/keymap.js'
 import { attachHerdrIntegration } from '../herdr.js'
 import { logMouseDebug } from '../utils/debug.js'
@@ -679,6 +683,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         shortcuts: Schema.object(
           Object.fromEntries(SHORTCUT_ACTIONS.map(action => [action.id, Schema.string().required(false)])),
         ).required(false),
+        // `/vim` normal-mode key overrides, one optional single-character
+        // key per action (see VIM_ACTIONS in src/utils/keymap.ts). Unset
+        // keeps the default key; an override REPLACES the default key's
+        // meaning when it lands on another action's key.
+        vimKeys: Schema.object(
+          Object.fromEntries(VIM_ACTIONS.map(action => [action.id, Schema.string().required(false)])),
+        ).required(false),
       }),
     )
     type SettingsValue = {
@@ -700,6 +711,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       smoothStreaming?: boolean
       statusBar?: Partial<StatusBarConfig>
       shortcuts?: Partial<Record<ShortcutActionId, string>>
+      vimKeys?: Partial<Record<VimActionId, string>>
     }
     const applyLayout = (value: SettingsValue): void => {
       if (!shadow) channel.setDiffLayout(value.diffLayout ?? config.diffLayout ?? 'auto')
@@ -772,6 +784,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       setKeymapOverrides(merged)
     }
+    // Vim key overrides resolve like shortcuts: settings user layer over
+    // cordis.yml, unset everywhere keeps the registry default. Applied live
+    // into the keymap module — the next keypress already uses the new keys.
+    const applyVimKeys = (value: SettingsValue): void => {
+      const userLayer = value.vimKeys ?? {}
+      const configLayer = config.vimKeys ?? {}
+      const merged: Partial<Record<VimActionId, string>> = {}
+      for (const action of VIM_ACTIONS) {
+        const user = userLayer[action.id]
+        const pinned = configLayer[action.id]
+        const chosen = typeof user === 'string' && user.trim() !== ''
+          ? user
+          : (typeof pinned === 'string' && pinned.trim() !== '' ? pinned : undefined)
+        if (chosen !== undefined) merged[action.id] = chosen
+      }
+      setVimKeys(merged)
+    }
     // The /settings default-reasoning-effort field (effortDefault): re-seat
     // the channel's future-sessions default without touching effort.json
     // (the user layer outranks that file). Only the field's own changes
@@ -794,6 +823,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       applyDisplay(next)
       applyEffortDefault(next)
       applyShortcuts(next)
+      applyVimKeys(next)
       applyRendererSettings(next)
     }
     // One-time fullscreen factory-default migration (companion to the
@@ -907,6 +937,54 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       hintZh: d => `切换全屏草稿编辑器（Enter 换行、Ctrl+Enter 发送）。默认 ${d}。`,
     },
   }
+  // /settings vim fields: one single-character text field per `/vim`
+  // normal-mode action. A blank draft restores the default key; drafts that
+  // are not exactly one character — or claim `/` / `?`, which own the
+  // command-menu / help shortcuts — are refused. Two actions may claim the
+  // same key; the later one in VIM_ACTIONS order wins.
+  const vimFieldMeta: Record<VimActionId, { label: string; zh: string; hintEn: string; hintZh: string }> = {
+    left: { label: 'Vim left key', zh: 'vim 左移键', hintEn: 'NORMAL: move one grapheme left.', hintZh: 'NORMAL 态左移一个字素。' },
+    down: { label: 'Vim down key', zh: 'vim 下移键', hintEn: 'NORMAL: move one line down.', hintZh: 'NORMAL 态下移一行。' },
+    up: { label: 'Vim up key', zh: 'vim 上移键', hintEn: 'NORMAL: move one line up.', hintZh: 'NORMAL 态上移一行。' },
+    right: { label: 'Vim right key', zh: 'vim 右移键', hintEn: 'NORMAL: move one grapheme right.', hintZh: 'NORMAL 态右移一个字素。' },
+    lineStart: { label: 'Vim line-start key', zh: 'vim 行首键', hintEn: 'NORMAL: jump to the start of the line.', hintZh: 'NORMAL 态跳到行首。' },
+    firstNonBlank: { label: 'Vim first-non-blank key', zh: 'vim 行首非空白键', hintEn: 'NORMAL: jump to the first non-blank of the line.', hintZh: 'NORMAL 态跳到行首第一个非空白。' },
+    lineEnd: { label: 'Vim line-end key', zh: 'vim 行尾键', hintEn: 'NORMAL: jump to the end of the line.', hintZh: 'NORMAL 态跳到行尾。' },
+    wordForward: { label: 'Vim word-forward key', zh: 'vim 下词键', hintEn: 'NORMAL: jump to the start of the next word.', hintZh: 'NORMAL 态跳到下一个词开头。' },
+    wordBackward: { label: 'Vim word-backward key', zh: 'vim 上词键', hintEn: 'NORMAL: jump to the start of the previous word.', hintZh: 'NORMAL 态跳到上一个词开头。' },
+    wordEnd: { label: 'Vim word-end key', zh: 'vim 词尾键', hintEn: 'NORMAL: jump to the end of the current or next word.', hintZh: 'NORMAL 态跳到当前或下一个词的词尾。' },
+    deleteChar: { label: 'Vim delete-char key', zh: 'vim 删字符键', hintEn: 'NORMAL: delete the character at the caret.', hintZh: 'NORMAL 态删除光标处字符。' },
+    deleteBefore: { label: 'Vim delete-before key', zh: 'vim 删前字符键', hintEn: 'NORMAL: delete the character before the caret.', hintZh: 'NORMAL 态删除光标前字符。' },
+    deleteOperator: { label: 'Vim delete-operator key', zh: 'vim 删除操作符键', hintEn: 'NORMAL: the `d` operator; its second key follows the same layout.', hintZh: 'NORMAL 态删除操作符；第二个键同样遵循该键位。' },
+    undo: { label: 'Vim undo key', zh: 'vim 撤销键', hintEn: 'NORMAL: undo the last vim edit.', hintZh: 'NORMAL 态撤销上一次 vim 编辑。' },
+    insert: { label: 'Vim insert key', zh: 'vim 插入键', hintEn: 'NORMAL: enter INSERT at the caret.', hintZh: 'NORMAL 态在光标处进入 INSERT。' },
+    insertFirstNonBlank: { label: 'Vim insert-at-start key', zh: 'vim 行首插入键', hintEn: 'NORMAL: enter INSERT at the first non-blank.', hintZh: 'NORMAL 态在行首非空白处进入 INSERT。' },
+    insertAfter: { label: 'Vim insert-after key', zh: 'vim 后插键', hintEn: 'NORMAL: enter INSERT after the caret.', hintZh: 'NORMAL 态在光标后进入 INSERT。' },
+    insertEndOfLine: { label: 'Vim insert-at-end key', zh: 'vim 行尾插入键', hintEn: 'NORMAL: enter INSERT at the end of the line.', hintZh: 'NORMAL 态在行尾进入 INSERT。' },
+    openBelow: { label: 'Vim open-below key', zh: 'vim 下方开行键', hintEn: 'NORMAL: open a new line below and enter INSERT.', hintZh: 'NORMAL 态在下方开新行并进入 INSERT。' },
+    openAbove: { label: 'Vim open-above key', zh: 'vim 上方开行键', hintEn: 'NORMAL: open a new line above and enter INSERT.', hintZh: 'NORMAL 态在上方开新行并进入 INSERT。' },
+  }
+  const vimFields: TuiSettingsField[] = VIM_ACTIONS.map(action => {
+    const meta = vimFieldMeta[action.id]
+    return {
+      path: ['vimKeys', action.id],
+      label: meta.label,
+      descriptions: { zh: meta.zh },
+      hint: `${meta.hintEn} Default: ${action.defaults[0]}.`,
+      hintDescriptions: { zh: `${meta.hintZh}默认 ${action.defaults[0]}。` },
+      group: 'vim-keys',
+      kind: 'text',
+      format(value: unknown): string {
+        return typeof value === 'string' && value.trim() !== '' ? value : effectiveVimKey(action.id)
+      },
+      parse(text: string) {
+        const draft = text.trim()
+        if (draft === '') return { kind: 'clear' }
+        if (draft.length !== 1 || draft === '/' || draft === '?') return undefined
+        return { kind: 'set', value: draft }
+      },
+    }
+  })
   const shortcutFields: TuiSettingsField[] = SHORTCUT_ACTIONS.map(action => {
     const meta = shortcutFieldMeta[action.id]
     const defaults = action.defaults.join(', ')
@@ -946,6 +1024,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       groups: [
         { id: 'status-bar', title: 'Status bar', descriptions: { zh: '底栏设置' } },
         { id: 'shortcuts', title: 'Shortcuts', descriptions: { zh: '快捷键' } },
+        { id: 'vim-keys', title: 'Vim keys', descriptions: { zh: 'vim 键位' } },
         { id: 'session', title: 'Session', descriptions: { zh: '会话' } },
       ],
       fields: [
@@ -1159,6 +1238,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           },
         },
         ...shortcutFields,
+        ...vimFields,
         {
           path: ['statusBar', 'compact'],
           label: 'Compact status bar',

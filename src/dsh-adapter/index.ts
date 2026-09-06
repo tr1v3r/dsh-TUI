@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { SessionModeSpec } from '../sessionModes.js'
 import { DEFAULT_STATUS_BAR, normalizePageMargin, type PageMarginSetting, type ScrollGutterMode, type StatusBarConfig, type ToolBackground } from '../tuiDisplayPrefs.js'
-import { SHORTCUT_ACTIONS, type ShortcutActionId } from '../utils/keymap.js'
+import { SHORTCUT_ACTIONS, type ShortcutActionId, VIM_ACTIONS, type VimActionId } from '../utils/keymap.js'
 
 export const name = 'dsh-tui'
 // `tuiWorkspaces` must stay OUT of this code-level inject (issue #183): the
@@ -129,6 +129,12 @@ export interface Config {
    *  defaults; the `/settings` screen edits the same keys live (its user
    *  layer wins over this file). */
   shortcuts?: Partial<Record<ShortcutActionId, string>>
+  /** `/vim` normal-mode key overrides (`left: 'n'`), keyed by action id (see
+   *  src/utils/keymap.ts). Values are single printable characters,
+   *  case-sensitive; `/` and `?` are refused. Unset actions keep their
+   *  defaults; the `/settings` screen edits the same keys live (its user
+   *  layer wins over this file). */
+  vimKeys?: Partial<Record<VimActionId, string>>
   /** Shift+Tab session-mode cycle (array order IS the cycle order; index 0
    *  is the unmarked base mode). Each entry bundles any subset of the
    *  `plan`/`sandbox`/`approval` atoms; absent → the built-in
@@ -192,6 +198,11 @@ export const Config: Schema<Config> = Schema.object({
   // keeps the built-in binding; see Config.shortcuts).
   shortcuts: Schema.object(
     Object.fromEntries(SHORTCUT_ACTIONS.map(action => [action.id, Schema.string().required(false)])),
+  ).required(false),
+  // One optional single-character key per `/vim` normal-mode action (no
+  // defaults: unset keeps the built-in key; see Config.vimKeys).
+  vimKeys: Schema.object(
+    Object.fromEntries(VIM_ACTIONS.map(action => [action.id, Schema.string().required(false)])),
   ).required(false),
   modes: Schema.array(
     Schema.object({
